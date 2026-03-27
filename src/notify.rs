@@ -2,14 +2,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub const VERSION: &str = "0.3.0";
+pub const VERSION: &str = "0.4.0";
 const WEBHOOK_URL: &str = "https://hook.notilens.com/webhook/{}/send";
 
 pub fn get_event_type(event: &str) -> &'static str {
     match event {
         "task.completed" | "output.generated" | "input.approved" => "success",
         "task.failed" | "task.timeout" | "task.error" | "task.terminated" | "output.failed" => "urgent",
-        "task.retry" | "task.cancelled" | "input.required" | "input.rejected" => "warning",
+        "task.retry" | "task.cancelled" | "task.paused" | "task.waiting" | "input.required" | "input.rejected" => "warning",
         _ => "info",
     }
 }

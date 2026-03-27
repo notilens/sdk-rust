@@ -8,7 +8,7 @@ Add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-notilens = "0.3"
+notilens = "0.4"
 ```
 
 ## Quick Start
@@ -16,17 +16,18 @@ notilens = "0.3"
 ```rust
 use notilens::NotiLens;
 
-let mut nl = NotiLens::init("my-agent", None)?;
+let nl = NotiLens::init("my-agent", None)?;
 
-let task_id = nl.task_start(None);
-nl.task_progress("Processing...", &task_id);
-nl.task_complete("Done!", &task_id);
+let mut run = nl.task("report");
+run.start();
+run.progress("Processing...");
+run.complete("Done!");
 ```
 
 ## Credentials
 
 Resolved in order:
-1. `Options { token, secret }` passed to `init()`
+1. `Options { token, secret, .. }` passed to `init()`
 2. `NOTILENS_TOKEN` / `NOTILENS_SECRET` env vars
 3. Saved CLI config (`notilens init --agent ...`)
 
@@ -34,8 +35,9 @@ Resolved in order:
 use notilens::{NotiLens, Options};
 
 let nl = NotiLens::init("my-agent", Some(Options {
-    token: "your-token".into(),
-    secret: "your-secret".into(),
+    token:     "your-token".into(),
+    secret:    "your-secret".into(),
+    state_ttl: 86400, // optional — orphaned state TTL in seconds (default: 86400)
 }))?;
 ```
 
@@ -43,31 +45,39 @@ let nl = NotiLens::init("my-agent", Some(Options {
 
 ### Task Lifecycle
 
-```rust
-let task_id = nl.task_start(None);                          // auto-generated ID
-let task_id = nl.task_start(Some("my-task-123"));           // custom ID
+`nl.task(label)` creates a `Run` — an isolated execution context. Multiple concurrent runs of the same label never conflict.
 
-nl.task_progress("Fetching data...", &task_id);
-nl.task_loop("Processing item 42", &task_id);
-nl.task_retry(&task_id);
-nl.task_stop(&task_id);
-nl.task_error("Quota exceeded", &task_id);                  // non-fatal
-nl.task_complete("All done!", &task_id);                    // terminal
-nl.task_fail("Unrecoverable error", &task_id);              // terminal
-nl.task_timeout("Timed out after 5m", &task_id);            // terminal
-nl.task_cancel("Cancelled by user", &task_id);              // terminal
-nl.task_terminate("Force-killed", &task_id);                // terminal
+```rust
+let mut run = nl.task("email");   // create a run for the "email" task
+run.queue();                      // optional — pre-start signal
+run.start();                      // begin the run
+
+run.progress("Fetching data...");
+run.loop_step("Processing item 42");
+run.retry();
+run.pause("Waiting for rate limit");
+run.resume("Resuming work");
+run.wait("Waiting for tool response");
+run.stop();
+run.error("Quota exceeded");      // non-fatal, run continues
+
+// Terminal — pick one
+run.complete("All done!");
+run.fail("Unrecoverable error");
+run.timeout("Timed out after 5m");
+run.cancel("Cancelled by user");
+run.terminate("Force-killed");
 ```
 
 ### Output & Input Events
 
 ```rust
-nl.output_generated("Report ready", &task_id);
-nl.output_failed("Rendering failed", &task_id);
+run.output_generated("Report ready");
+run.output_failed("Rendering failed");
 
-nl.input_required("Approve deployment?", &task_id);
-nl.input_approved("Approved", &task_id);
-nl.input_rejected("Rejected", &task_id);
+run.input_required("Approve deployment?");
+run.input_approved("Approved");
+run.input_rejected("Rejected");
 ```
 
 ### Metrics
@@ -75,24 +85,60 @@ nl.input_rejected("Rejected", &task_id);
 Numeric values accumulate; strings are replaced.
 
 ```rust
-nl.metric("tokens", 512);
-nl.metric("tokens", 128);    // now 640
+run.metric("tokens", 512);
+run.metric("tokens", 128);           // now 640
+run.metric("cost", 0.003f64);
 
-nl.reset_metrics(Some("tokens"));   // reset one key
-nl.reset_metrics(None);             // reset all
+run.reset_metrics(Some("tokens"));   // reset one key
+run.reset_metrics(None);             // reset all
 ```
+
+### Automatic Timing
+
+NotiLens automatically tracks task timing. These fields are included in every notification's `meta` payload when non-zero:
+
+| Field | Description |
+|-------|-------------|
+| `total_duration_ms` | Wall-clock time since `start` |
+| `queue_ms` | Time between `queue` and `start` |
+| `pause_ms` | Cumulative time spent paused |
+| `wait_ms` | Cumulative time spent waiting |
+| `active_ms` | Active time (`total − pause − wait`) |
 
 ### Generic Events
 
 ```rust
-use notilens::EmitOptions;
+use notilens::TrackOptions;
 use std::collections::HashMap;
 
-nl.emit("custom.event", "Something happened", None);
+nl.track("custom.event", "Something happened", None);
+run.track("custom.event", "Run-level event", None);
 
 let mut meta = HashMap::new();
 meta.insert("key".into(), serde_json::json!("value"));
-nl.emit("custom.event", "With meta", Some(EmitOptions { meta }));
+run.track("custom.event", "With meta", Some(TrackOptions { meta }));
+```
+
+### Full Example
+
+```rust
+use notilens::NotiLens;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let nl  = NotiLens::init("summarizer", None)?;
+    let mut run = nl.task("report");
+    run.start();
+
+    match process() {
+        Ok(tokens) => {
+            run.metric("tokens", tokens);
+            run.output_generated("Summary ready");
+            run.complete("All done!");
+        }
+        Err(e) => run.fail(&e.to_string()),
+    }
+    Ok(())
+}
 ```
 
 ## CLI
@@ -113,38 +159,46 @@ notilens remove-agent my-agent
 
 ### Commands
 
+`--task` is a semantic label (e.g. `email`, `report`). Each `task.start` creates an isolated run internally — concurrent executions of the same label never conflict.
+
 ```bash
 # Task lifecycle
-notilens task.start     --agent my-agent --task job-123
-notilens task.progress  "Fetching data" --agent my-agent --task job-123
-notilens task.loop      "Item 5/100"    --agent my-agent --task job-123
-notilens task.retry                     --agent my-agent --task job-123
-notilens task.stop                      --agent my-agent --task job-123
-notilens task.error     "Quota hit"     --agent my-agent --task job-123
-notilens task.fail      "Fatal error"   --agent my-agent --task job-123
-notilens task.timeout   "Timed out"     --agent my-agent --task job-123
-notilens task.cancel    "Cancelled"     --agent my-agent --task job-123
-notilens task.terminate "Force stop"    --agent my-agent --task job-123
-notilens task.complete  "Done!"         --agent my-agent --task job-123
+notilens task.queue                      --agent my-agent --task email
+notilens task.start                      --agent my-agent --task email
+notilens task.progress  "Fetching data"  --agent my-agent --task email
+notilens task.loop      "Item 5/100"     --agent my-agent --task email
+notilens task.retry                      --agent my-agent --task email
+notilens task.pause     "Rate limited"   --agent my-agent --task email
+notilens task.resume    "Resuming"       --agent my-agent --task email
+notilens task.wait      "Awaiting tool"  --agent my-agent --task email
+notilens task.stop                       --agent my-agent --task email
+notilens task.error     "Quota hit"      --agent my-agent --task email
+notilens task.fail      "Fatal error"    --agent my-agent --task email
+notilens task.timeout   "Timed out"      --agent my-agent --task email
+notilens task.cancel    "Cancelled"      --agent my-agent --task email
+notilens task.terminate "Force stop"     --agent my-agent --task email
+notilens task.complete  "Done!"          --agent my-agent --task email
 
 # Output / Input
-notilens output.generate "Report ready"  --agent my-agent --task job-123
-notilens output.fail     "Render failed" --agent my-agent --task job-123
-notilens input.required  "Approve?"      --agent my-agent --task job-123
-notilens input.approve   "Approved"      --agent my-agent --task job-123
-notilens input.reject    "Rejected"      --agent my-agent --task job-123
+notilens output.generate "Report ready"  --agent my-agent --task email
+notilens output.fail     "Render failed" --agent my-agent --task email
+notilens input.required  "Approve?"      --agent my-agent --task email
+notilens input.approve   "Approved"      --agent my-agent --task email
+notilens input.reject    "Rejected"      --agent my-agent --task email
 
-# Metrics
-notilens metric       tokens=512 cost=0.003  --agent my-agent --task job-123
-notilens metric.reset tokens                 --agent my-agent --task job-123
-notilens metric.reset                        --agent my-agent --task job-123
+# Metrics (accumulated per run)
+notilens metric       tokens=512 cost=0.003 --agent my-agent --task email
+notilens metric.reset tokens               --agent my-agent --task email
+notilens metric.reset                      --agent my-agent --task email
 
 # Generic
-notilens emit my.event "Something happened"  --agent my-agent
+notilens track my.event "Something happened" --agent my-agent
 
 # Version
 notilens version
 ```
+
+`task.start` prints the internal `run_id` to stdout.
 
 ## Requirements
 
