@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub const VERSION: &str = "0.4.0";
+pub const VERSION: &str = "0.4.1";
 const WEBHOOK_URL: &str = "https://hook.notilens.com/webhook/{}/send";
 
 pub fn get_event_type(event: &str) -> &'static str {
