@@ -42,7 +42,7 @@ fn main() {
             }
         }
 
-        "task.queue" => {
+        "queue" => {
             let flags = parse_flags(rest);
             let run_id = gen_run_id();
             let sf = get_state_file(&flags.agent, &run_id);
@@ -64,7 +64,7 @@ fn main() {
             println!("{}", run_id);
         }
 
-        "task.start" => {
+        "start" => {
             let flags = parse_flags(rest);
             // Reuse run_id from a prior task.queue if available
             let run_id = {
@@ -97,7 +97,7 @@ fn main() {
             println!("{}", run_id);
         }
 
-        "task.progress" => {
+        "progress" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -105,7 +105,7 @@ fn main() {
             send_notify("task.progress", msg, &flags, &run_id);
         }
 
-        "task.loop" => {
+        "loop" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -119,7 +119,7 @@ fn main() {
             send_notify("task.loop", msg, &flags, &run_id);
         }
 
-        "task.retry" => {
+        "retry" => {
             let flags = parse_flags(rest);
             let run_id = resolve_run_id(&flags);
             let sf = get_state_file(&flags.agent, &run_id);
@@ -131,13 +131,13 @@ fn main() {
             send_notify("task.retry", "Retrying task", &flags, &run_id);
         }
 
-        "task.stop" => {
+        "stop" => {
             let flags = parse_flags(rest);
             let run_id = resolve_run_id(&flags);
             send_notify("task.stopped", "Task stopped", &flags, &run_id);
         }
 
-        "task.pause" => {
+        "pause" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -151,7 +151,7 @@ fn main() {
             send_notify("task.paused", msg, &flags, &run_id);
         }
 
-        "task.resume" => {
+        "resume" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -174,7 +174,7 @@ fn main() {
             send_notify("task.resumed", msg, &flags, &run_id);
         }
 
-        "task.wait" => {
+        "wait" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -188,7 +188,7 @@ fn main() {
             send_notify("task.waiting", msg, &flags, &run_id);
         }
 
-        "task.error" => {
+        "error" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -203,7 +203,7 @@ fn main() {
             eprintln!("❌ Error: {}", msg);
         }
 
-        "task.fail" => {
+        "fail" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -213,7 +213,7 @@ fn main() {
             delete_pointer(&flags.agent, &flags.task_label);
         }
 
-        "task.timeout" => {
+        "timeout" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -223,7 +223,7 @@ fn main() {
             delete_pointer(&flags.agent, &flags.task_label);
         }
 
-        "task.cancel" => {
+        "cancel" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -233,7 +233,7 @@ fn main() {
             delete_pointer(&flags.agent, &flags.task_label);
         }
 
-        "task.terminate" => {
+        "terminate" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -243,7 +243,7 @@ fn main() {
             delete_pointer(&flags.agent, &flags.task_label);
         }
 
-        "task.complete" => {
+        "complete" => {
             let (pos, rest2) = positional_args(rest);
             let msg = pos.first().map(|s| s.as_str()).unwrap_or("");
             let flags = parse_flags(&rest2);
@@ -447,7 +447,7 @@ fn resolve_run_id(f: &Flags) -> String {
     let run_id = read_pointer(&f.agent, &f.task_label);
     if run_id.is_empty() {
         eprintln!(
-            "❌ No active run for task '{}' on agent '{}'. Run task.start first.",
+            "❌ No active run for task '{}' on agent '{}'. Run start first.",
             f.task_label, f.agent
         );
         std::process::exit(1);
@@ -568,21 +568,21 @@ fn print_usage() {
   notilens remove-agent <agent>
 
 Task Lifecycle:
-  notilens task.queue           --agent <agent> --task <label>
-  notilens task.start           --agent <agent> --task <label>
-  notilens task.progress  "msg" --agent <agent> --task <label>
-  notilens task.loop      "msg" --agent <agent> --task <label>
-  notilens task.retry           --agent <agent> --task <label>
-  notilens task.stop            --agent <agent> --task <label>
-  notilens task.pause     "msg" --agent <agent> --task <label>
-  notilens task.resume    "msg" --agent <agent> --task <label>
-  notilens task.wait      "msg" --agent <agent> --task <label>
-  notilens task.error     "msg" --agent <agent> --task <label>
-  notilens task.fail      "msg" --agent <agent> --task <label>
-  notilens task.timeout   "msg" --agent <agent> --task <label>
-  notilens task.cancel    "msg" --agent <agent> --task <label>
-  notilens task.terminate "msg" --agent <agent> --task <label>
-  notilens task.complete  "msg" --agent <agent> --task <label>
+  notilens queue           --agent <agent> --task <label>
+  notilens start           --agent <agent> --task <label>
+  notilens progress  "msg" --agent <agent> --task <label>
+  notilens loop      "msg" --agent <agent> --task <label>
+  notilens retry           --agent <agent> --task <label>
+  notilens stop            --agent <agent> --task <label>
+  notilens pause     "msg" --agent <agent> --task <label>
+  notilens resume    "msg" --agent <agent> --task <label>
+  notilens wait      "msg" --agent <agent> --task <label>
+  notilens error     "msg" --agent <agent> --task <label>
+  notilens fail      "msg" --agent <agent> --task <label>
+  notilens timeout   "msg" --agent <agent> --task <label>
+  notilens cancel    "msg" --agent <agent> --task <label>
+  notilens terminate "msg" --agent <agent> --task <label>
+  notilens complete  "msg" --agent <agent> --task <label>
 
 Output / Input:
   notilens output.generate "msg" --agent <agent> --task <label>
